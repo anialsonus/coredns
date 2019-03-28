@@ -7,15 +7,10 @@
 package adcm_lookup
 
 import (
-	"bufio"
-	"bytes"
-	"io"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
-	"fmt"
 	"net/http"
 	"net/url"
 	"encoding/json"
@@ -113,10 +108,11 @@ type Hostsfile struct {
 
 	// inline saves the hosts file that is inlined in a Corefile.
 	// We need a copy here as we want to use it to initialize the maps for parse.
-	inline *hostsMap
 
 	// path to the hosts file
-	path string
+	adcm_host  string
+	adcm_login string
+	adcm_pass  string
 
 	// mtime and size are only read and modified by a single goroutine
 	mtime time.Time
@@ -127,101 +123,20 @@ type Hostsfile struct {
 
 // readHosts determines if the cached data needs to be updated based on the size and modification time of the hostsfile.
 func (h *Hostsfile) readHosts() {
-	file, err := os.Open(h.path)
-	if err != nil {
-		// We already log a warning if the file doesn't exist or can't be opened on setup. No need to return the error here.
-		return
-	}
-	defer file.Close()
 
-	stat, err := file.Stat()
-	h.RLock()
-	size := h.size
-	h.RUnlock()
-	if err == nil && h.mtime.Equal(stat.ModTime()) && size == stat.Size() {
-		return
-	}
-
-	newMap := h.parse(file)
+	newMap := h.populateHostsMaps()
 	log.Debugf("Parsed hosts file into %d entries", newMap.Len())
 
 	h.Lock()
 
 	h.hmap = newMap
 	// Update the data cache.
-	h.mtime = stat.ModTime()
-	h.size = stat.Size()
 
 	h.Unlock()
 }
 
-func (h *Hostsfile) initInline(inline []string) {
-	if len(inline) == 0 {
-		return
-	}
-
-	h.inline = h.parse(strings.NewReader(strings.Join(inline, "\n")))
-	*h.hmap = *h.inline
-}
 
 // Parse reads the hostsfile and populates the byName and byAddr maps.
-func (h *Hostsfile) parse(r io.Reader) *hostsMap {
-	hmap := newHostsMap()
-
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if i := bytes.Index(line, []byte{'#'}); i >= 0 {
-			// Discard comments.
-			line = line[0:i]
-		}
-		f := bytes.Fields(line)
-		if len(f) < 2 {
-			continue
-		}
-		addr := parseLiteralIP(string(f[0]))
-		if addr == nil {
-			continue
-		}
-		ver := ipVersion(string(f[0]))
-		for i := 1; i < len(f); i++ {
-			name := absDomainName(string(f[i]))
-			if plugin.Zones(h.Origins).Matches(name) == "" {
-				// name is not in Origins
-				continue
-			}
-			switch ver {
-			case 4:
-				hmap.byNameV4[name] = append(hmap.byNameV4[name], addr)
-			case 6:
-				hmap.byNameV6[name] = append(hmap.byNameV6[name], addr)
-			default:
-				continue
-			}
-			if !h.options.autoReverse {
-				continue
-			}
-			hmap.byAddr[addr.String()] = append(hmap.byAddr[addr.String()], name)
-		}
-	}
-
-	for name := range h.hmap.byNameV4 {
-		hmap.byNameV4[name] = append(hmap.byNameV4[name], h.hmap.byNameV4[name]...)
-	}
-	for name := range h.hmap.byNameV4 {
-		hmap.byNameV6[name] = append(hmap.byNameV6[name], h.hmap.byNameV6[name]...)
-	}
-
-	for addr := range h.hmap.byAddr {
-		hmap.byAddr[addr] = append(hmap.byAddr[addr], h.hmap.byAddr[addr]...)
-	}
-	yNameV4, byNameV6, byAddr := populateMaps(h)
-	hmap.byNameV4 = byNameV4
-	hmap.byNameV6 = byNameV6
-	hmap.byAddr   = byAddr
-
-	return hmap
-}
 
 // ipVersion returns what IP version was used textually
 // For why the string is parsed end to start,
@@ -305,11 +220,9 @@ type host_config_e struct {
 	AnsibleHost string `json:"ansible_host"`
 }
 
-func populateMaps(h *Hostsfile) (byNameV4, byNameV6 map[string][]net.IP, byAddr map[string][]string)  {
+func (h *Hostsfile) populateHostsMaps() *hostsMap  {
 
-	byNameV4 = make(map[string][]net.IP)
-	byNameV6 = make(map[string][]net.IP)
-	byAddr   = make(map[string][]string)
+	hmap := newHostsMap()
 	fqdn_ip := make(map[string]string)
 	//type M struct host
 	host_url := "http://localhost:8000/api/v1/host/?format=json"
@@ -325,28 +238,36 @@ func populateMaps(h *Hostsfile) (byNameV4, byNameV6 map[string][]net.IP, byAddr 
 	req, err := http.NewRequest(http.MethodPost, token_url, strings.NewReader(form.Encode()))
 
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
+		return hmap
 	}
 	req.SetBasicAuth("admin", "admin")
 	req.Header.Set("User-Agent", "core-dns")
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	res, getErr := httpClient.Do(req)
+	if getErr != nil {
+		log.Error(getErr)
+		return hmap
+	}
 	body, readErr := ioutil.ReadAll(res.Body)
 	if readErr != nil {
-		log.Fatal(readErr)
+		log.Error(readErr)
+		return hmap
 	}
 
 	token := token{}
 	tokenJsonErr := json.Unmarshal(body, &token)
 	if tokenJsonErr != nil {
-		log.Fatal(tokenJsonErr)
+		log.Error(tokenJsonErr)
+		return hmap
 	}
 
 
 	req, err = http.NewRequest(http.MethodGet, host_url, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
+		return hmap
 	}
 
 	req.Header.Set("User-Agent", "core-dns")
@@ -354,18 +275,21 @@ func populateMaps(h *Hostsfile) (byNameV4, byNameV6 map[string][]net.IP, byAddr 
 
 	res, getErr = httpClient.Do(req)
 	if getErr != nil {
-		log.Fatal(getErr)
+		log.Error(getErr)
+		return hmap
 	}
 
 	body, readErr = ioutil.ReadAll(res.Body)
 	if readErr != nil {
-		log.Fatal(readErr)
+		log.Error(readErr)
+		return hmap
 	}
 
 	var hostArr []host
 	getHostsErr := json.Unmarshal(body, &hostArr)
 	if readErr != nil {
-		log.Fatal(getHostsErr)
+		log.Error(getHostsErr)
+		return hmap
 	}
 
 	for _, e := range hostArr {
@@ -373,23 +297,27 @@ func populateMaps(h *Hostsfile) (byNameV4, byNameV6 map[string][]net.IP, byAddr 
 		url := "http://localhost:8000/api/v1/host/" + s + "/config/current/?format=json"
 		req, err = http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
-			log.Fatal(err)
+			log.Error(err)
+			return hmap
 		}
 		req.Header.Set("User-Agent", "core-dns")
 		req.Header.Add("Authorization", "Token " + token.Token)
 
 		res, getErr := httpClient.Do(req)
 		if getErr != nil {
-			log.Fatal(getErr)
+			log.Error(getErr)
+			return hmap
 		}
 		body, readErr := ioutil.ReadAll(res.Body)
 		if readErr != nil {
-			log.Fatal(readErr)
+			log.Error(readErr)
+			return hmap
 		}
 		var host_config map[string]interface{}
 		hostConfigJsonErr := json.Unmarshal(body, &host_config)
 		if hostConfigJsonErr != nil {
-			log.Fatal(hostConfigJsonErr)
+			log.Error(hostConfigJsonErr)
+			return hmap
 		}
 		host_config_e := host_config["config"].(map[string]interface{})
 		// host_config_e := host_config_e{}
@@ -407,16 +335,16 @@ func populateMaps(h *Hostsfile) (byNameV4, byNameV6 map[string][]net.IP, byAddr 
 		}
 		switch ver {
 		case 4:
-			byNameV4[fqdn + "."] = append(byNameV4[fqdn + "."], ipp)
+			hmap.byNameV4[fqdn + "."] = append(hmap.byNameV4[fqdn + "."], ipp)
 		case 6:
-			byNameV6[fqdn + "."] = append(byNameV6[fqdn + "."], ipp)
+			hmap.byNameV6[fqdn + "."] = append(hmap.byNameV6[fqdn + "."], ipp)
 		default:
 			continue
 		}
 		if !h.options.autoReverse {
 			continue
 		}
-		byAddr[ipp.String()] = append(byAddr[ipp.String()], fqdn + ".")
+		hmap.byAddr[ipp.String()] = append(hmap.byAddr[ipp.String()], fqdn + ".")
 	}
-	return
+	return hmap
 }

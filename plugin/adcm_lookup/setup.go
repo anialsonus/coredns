@@ -1,8 +1,6 @@
 package adcm_lookup
 
 import (
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -71,13 +69,11 @@ func setup(c *caddy.Controller) error {
 }
 
 func hostsParse(c *caddy.Controller) (Hosts, error) {
-	config := dnsserver.GetConfig(c)
 
 	options := newOptions()
 
 	h := Hosts{
 		Hostsfile: &Hostsfile{
-			path:    "/etc/hosts",
 			hmap:    newHostsMap(),
 			options: options,
 		},
@@ -93,24 +89,13 @@ func hostsParse(c *caddy.Controller) (Hosts, error) {
 
 		args := c.RemainingArgs()
 
-		if len(args) >= 1 {
-			h.path = args[0]
-			args = args[1:]
-
-			if !filepath.IsAbs(h.path) && config.Root != "" {
-				h.path = filepath.Join(config.Root, h.path)
-			}
-			s, err := os.Stat(h.path)
-			if err != nil {
-				if os.IsNotExist(err) {
-					log.Warningf("File does not exist: %s", h.path)
-				} else {
-					return h, c.Errf("unable to access hosts file '%s': %v", h.path, err)
-				}
-			}
-			if s != nil && s.IsDir() {
-				log.Warningf("Hosts file %q is a directory", h.path)
-			}
+		if len(args) < 3 {
+			return h, c.Errf("not enough params provided")
+		} else {
+			h.adcm_host = args[0]
+			h.adcm_login = args[1]
+			h.adcm_pass = args[2]
+			args = args[3:]
 		}
 
 		origins := make([]string, len(c.ServerBlockKeys))
@@ -166,8 +151,6 @@ func hostsParse(c *caddy.Controller) (Hosts, error) {
 			}
 		}
 	}
-
-	h.initInline(inline)
 
 	return h, nil
 }
