@@ -33,6 +33,7 @@ var Directives = []string{
 	"autopath",
 	"template",
 	"hosts",
+	"adcm_lookup",
 	"route53",
 	"federation",
 	"k8s_external",

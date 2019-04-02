@@ -1,8 +1,8 @@
-# hosts
+# adcm_lookup
 
 ## Name
 
-*hosts* - enables serving zone data from a `/etc/hosts` style file.
+*hosts* - enables serving zone data from a by getting ansible_hosts information from adcm
 
 ## Description
 
@@ -16,22 +16,6 @@ Should the file be deleted, any inlined content will continue to be served. When
 
 This plugin can only be used once per Server Block.
 
-## The hosts file
-
-Commonly the entries are of the from `IP_address canonical_hostname [aliases...]` as explained by the hosts(5) man page.
-
-Examples:
-
-~~~
-# The following lines are desirable for IPv4 capable hosts
-127.0.0.1       localhost
-192.168.1.10    example.com            example
-
-# The following lines are desirable for IPv6 capable hosts
-::1                     localhost ip6-localhost ip6-loopback
-fdfc:a744:27b5:3b0e::1  example.com example
-~~~
-
 ### PTR records
 
 PTR records for reverse lookups are generated automatically by CoreDNS (based on the hosts file entries) and cannot be created manually.
@@ -39,7 +23,7 @@ PTR records for reverse lookups are generated automatically by CoreDNS (based on
 ## Syntax
 
 ~~~
-hosts [FILE [ZONES...]] {
+adcm_lookup adcm_host login pass [ZONES...] {
     [INLINE]
     ttl SECONDS
     no_reverse

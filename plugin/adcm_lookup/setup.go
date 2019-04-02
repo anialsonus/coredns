@@ -92,7 +92,7 @@ func hostsParse(c *caddy.Controller) (Hosts, error) {
 		if len(args) < 3 {
 			return h, c.Errf("not enough params provided")
 		} else {
-			h.adcm_host = args[0]
+			h.adcm_url = args[0]
 			h.adcm_login = args[1]
 			h.adcm_pass = args[2]
 			args = args[3:]

@@ -109,8 +109,8 @@ type Hostsfile struct {
 	// inline saves the hosts file that is inlined in a Corefile.
 	// We need a copy here as we want to use it to initialize the maps for parse.
 
-	// path to the hosts file
-	adcm_host  string
+	// adcm credentials and url
+	adcm_url  string
 	adcm_login string
 	adcm_pass  string
 
@@ -225,8 +225,8 @@ func (h *Hostsfile) populateHostsMaps() *hostsMap  {
 	hmap := newHostsMap()
 	fqdn_ip := make(map[string]string)
 	//type M struct host
-	host_url := "http://localhost:8000/api/v1/host/?format=json"
-	token_url := "http://localhost:8000/api/v1/token/?format=json"
+	host_url := h.adcm_url + "/api/v1/host/?format=json"
+	token_url := h.adcm_url + "/api/v1/token/?format=json"
 
 	httpClient := http.Client{
 		Timeout: time.Second * 2, // Maximum of 2 secs
@@ -294,7 +294,7 @@ func (h *Hostsfile) populateHostsMaps() *hostsMap  {
 
 	for _, e := range hostArr {
 		s := strconv.Itoa(e.ID)
-		url := "http://localhost:8000/api/v1/host/" + s + "/config/current/?format=json"
+		url := h.adcm_url + "/api/v1/host/" + s + "/config/current/?format=json"
 		req, err = http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
 			log.Error(err)
