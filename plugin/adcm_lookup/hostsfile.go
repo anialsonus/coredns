@@ -222,6 +222,7 @@ type host_config_e struct {
 
 func (h *Hostsfile) populateHostsMaps() *hostsMap  {
 
+
 	hmap := newHostsMap()
 	fqdn_ip := make(map[string]string)
 	//type M struct host
@@ -233,15 +234,15 @@ func (h *Hostsfile) populateHostsMaps() *hostsMap  {
 	}
 
 	form := url.Values{}
-	form.Set("username", "admin")
-	form.Add("password", "admin")
+	form.Set("username", h.adcm_login)
+	form.Add("password", h.adcm_pass)
 	req, err := http.NewRequest(http.MethodPost, token_url, strings.NewReader(form.Encode()))
 
 	if err != nil {
 		log.Error(err)
 		return hmap
 	}
-	req.SetBasicAuth("admin", "admin")
+	req.SetBasicAuth(h.adcm_login, h.adcm_pass)
 	req.Header.Set("User-Agent", "core-dns")
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
@@ -291,6 +292,7 @@ func (h *Hostsfile) populateHostsMaps() *hostsMap  {
 		log.Error(getHostsErr)
 		return hmap
 	}
+
 
 	for _, e := range hostArr {
 		s := strconv.Itoa(e.ID)
