@@ -321,13 +321,19 @@ func (h *Hostsfile) populateHostsMaps() *hostsMap  {
 			log.Error(hostConfigJsonErr)
 			return hmap
 		}
+		if host_config["config"] == nil {
+			log.Error("No host config found")
+			return hmap
+		}
 		host_config_e := host_config["config"].(map[string]interface{})
 		// host_config_e := host_config_e{}
 		// jsonErr := json.Unmarshal([]byte(host_config.Config), &host_config_e)
 		// if jsonErr != nil {
 		// 	log.Fatal(jsonErr)
 		// }
-		fqdn_ip[e.FQDN] = host_config_e["ansible_host"].(string)
+		if host_config_e["ansible_host"] != nil {
+			fqdn_ip[e.FQDN] = host_config_e["ansible_host"].(string)
+		}
 	}
 	for fqdn, ip := range fqdn_ip {
 		ver := ipVersion(ip)
